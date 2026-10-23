@@ -1,7 +1,7 @@
 package twitter;
 
 import java.util.ArrayList;
-import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -29,26 +29,19 @@ public class SocialNetwork {
      */
     public static Map<String, Set<String>> guessFollowsGraph(List<Tweet> tweets) {
         Map<String, Set<String>> graph = new HashMap<>();
-        
+
         for (Tweet tweet : tweets) {
+            // usernames are case-insensitive, so normalise to lower case
             String author = tweet.getAuthor().toLowerCase();
-            Set<String> mentionedUsers = Extract.getMentionedUsers(Arrays.asList(tweet));
-            
-            // Remove self-mentions if any
+            Set<String> mentionedUsers = Extract.getMentionedUsers(Collections.singletonList(tweet));
+
+            // a user does not follow themselves
             mentionedUsers.remove(author);
-            
-            // Add to graph
-            if (!graph.containsKey(author)) {
-                graph.put(author, new HashSet<>());
-            }
-            graph.get(author).addAll(mentionedUsers);
-            
-            // Ensure mentioned users also appear as keys in the graph even if they didn't tweet
-            for (String user : mentionedUsers) {
-                graph.putIfAbsent(user, new HashSet<>());
-            }
+
+            // keys are only users who wrote tweets (per the spec)
+            graph.computeIfAbsent(author, k -> new HashSet<>()).addAll(mentionedUsers);
         }
-        
+
         return graph;
     }
 
@@ -63,20 +56,22 @@ public class SocialNetwork {
      */
     public static List<String> influencers(Map<String, Set<String>> followsGraph) {
         Map<String, Integer> followerCounts = new HashMap<>();
-        
-        // Initialize all users with 0 followers
-        for (String user : followsGraph.keySet()) {
-            followerCounts.putIfAbsent(user, 0);
-            for (String followed : followsGraph.get(user)) {
-                followerCounts.putIfAbsent(followed, 0);
-                followerCounts.put(followed, followerCounts.get(followed) + 1);
+
+        // every user that appears as a key or as a followed user is a node
+        for (Map.Entry<String, Set<String>> entry : followsGraph.entrySet()) {
+            followerCounts.putIfAbsent(entry.getKey(), 0);
+            for (String followed : entry.getValue()) {
+                followerCounts.merge(followed, 1, Integer::sum);
             }
         }
-        
-        // Collect all users and sort by follower count descending
+
+        // most followers first; ties broken alphabetically so output is deterministic
         List<String> influencersList = new ArrayList<>(followerCounts.keySet());
-        influencersList.sort((u1, u2) -> followerCounts.get(u2).compareTo(followerCounts.get(u1)));
-        
+        influencersList.sort((u1, u2) -> {
+            int byCount = followerCounts.get(u2).compareTo(followerCounts.get(u1));
+            return byCount != 0 ? byCount : u1.compareTo(u2);
+        });
+
         return influencersList;
     }
 }
